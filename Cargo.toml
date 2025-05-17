@@ -1,0 +1,11 @@
+[package]
+name = "koto_bevy_systems"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.16.0", features = [
+    "dynamic_linking",
+    "configurable_error_handler",
+] }
+koto = { version = "0.15.3", default-features = false, features = ["arc"] }
