@@ -8,12 +8,15 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
 };
-use koto::Koto;
+use koto::{
+    Koto,
+    runtime::{KIterator, KIteratorOutput, KTuple, KValue, KotoIterator, MetaKey},
+};
 
-const SCRIPT: &str = r#"
+const ONE_SHOT_SCRIPT: &str = r#"
 print "koto script loaded"
 
-call_bevy_system()
+# call_bevy_system()
 
 print "end koto script"
 "#;
@@ -26,10 +29,21 @@ fn main() -> Result<(), BevyError> {
     runtime.register_one_shot_system(app.world_mut(), "call_bevy_system", one_shot);
     app.insert_resource(runtime);
 
-    app.world_mut().run_system_once(run_script)??;
+    // app.world_mut().run_system_once(run_script)??;
+    //
+    // app.add_systems(Startup, run_one_shot_script);
+    // app.add_systems(Update, check_crash);
+    // app.run();
+
+    app.register_type::<Health>();
+    app.world_mut().run_system_once(register_koto_system)??;
 
     Ok(())
 }
+
+#[derive(Component, Reflect, Debug, Default)]
+#[reflect(Component, Default)]
+pub(crate) struct Health(pub u32);
 
 #[derive(Resource)]
 struct Runtime {
@@ -62,7 +76,7 @@ fn one_shot(mut commands: Commands) {
     commands.spawn_empty();
 }
 
-fn run_script(world: &mut World) -> Result<(), BevyError> {
+fn run_one_shot_script(world: &mut World) -> Result<(), BevyError> {
     let unsafe_world_cell = world.as_unsafe_world_cell();
     let static_unsafe_world_cell: UnsafeWorldCell<'static> =
         unsafe { transmute(unsafe_world_cell) };
@@ -76,13 +90,71 @@ fn run_script(world: &mut World) -> Result<(), BevyError> {
         })
     }
 
-    match runtime.koto.compile_and_run(SCRIPT) {
+    match runtime.koto.compile_and_run(ONE_SHOT_SCRIPT) {
         Ok(_) => {}
         Err(err) => {
             println!("{err}");
             return Err(BevyError::from(err));
         }
     };
+
+    Ok(())
+}
+
+fn check_crash(mut runtime: ResMut<Runtime>) {
+    runtime.koto.compile_and_run(ONE_SHOT_SCRIPT).unwrap();
+}
+
+const SYSTEM_SCRIPT: &str = r#"
+export my_system = |query|
+    @meta args = ["Query<Entity, Moo>"]
+
+#    query = [("ent", 5)]
+#
+#    for entity, v in query
+#        print v
+
+# add_system(my_system)
+
+"#;
+
+fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
+    let unsafe_world_cell = world.as_unsafe_world_cell();
+
+    let mut runtime = unsafe { unsafe_world_cell.world_mut().resource_mut::<Runtime>() };
+
+    let system_script = include_str!("system_script.koto");
+
+    match runtime.koto.compile_and_run(system_script) {
+        Ok(_) => {}
+        Err(err) => {
+            println!("{err}");
+            return Err(BevyError::from(err));
+        }
+    };
+
+    let my_system = runtime.koto.exports().get("my_system").unwrap();
+
+    let s: KValue = KTuple::from(&["test".into(), 1.into()]).into();
+
+    let iterator = KIterator::with_std_forward_iter(
+        vec![
+            KIteratorOutput::Value(s.clone()),
+            KIteratorOutput::Value(s.clone()),
+            KIteratorOutput::Value(s.clone()),
+            KIteratorOutput::Value(s.clone()),
+        ]
+        .into_iter(),
+    );
+    let query = KValue::Iterator(iterator);
+
+    match runtime.koto.call_function(my_system, query) {
+        Ok(_) => {}
+        Err(err) => {
+            println!("{err}");
+            return Err(BevyError::from(err));
+        }
+    }
 
     Ok(())
 }

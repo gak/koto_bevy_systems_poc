@@ -1,0 +1,7 @@
+export my_system = |query|
+  # query = [("ent", 5)]
+
+  for v in query
+      print v
+
+# add_system(my_system)
