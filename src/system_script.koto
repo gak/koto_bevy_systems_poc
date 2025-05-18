@@ -1,6 +1,4 @@
 export my_system = |query|
-  # query = [("ent", 5)]
-
   for name, health in query
       if name == "Player"
         health += 1

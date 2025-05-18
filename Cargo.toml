@@ -9,3 +9,4 @@ bevy = { version = "0.16.0", features = [
     "configurable_error_handler",
 ] }
 koto = { version = "0.15.3", default-features = false, features = ["arc"] }
+derive_more = "*"

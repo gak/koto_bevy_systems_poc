@@ -1,19 +1,11 @@
-use std::mem::transmute;
+use std::{marker::PhantomData, mem::transmute};
 
 use bevy::{
-    ecs::{
-        system::{RunSystemOnce, SystemId},
-        world::unsafe_world_cell::UnsafeWorldCell,
-    },
+    ecs::{system::SystemId, world::unsafe_world_cell::UnsafeWorldCell},
     platform::collections::HashMap,
     prelude::*,
 };
-use koto::{
-    ErrorKind,
-    derive::{KotoCopy, KotoType, koto_impl},
-    prelude::*,
-    runtime,
-};
+use koto::{ErrorKind, derive::KotoType, prelude::*, runtime};
 
 const ONE_SHOT_SCRIPT: &str = r#"
 print "koto script loaded"
@@ -171,17 +163,21 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
     //     .into_iter(),
     // );
 
-    let mut query_state = unsafe { unsafe_world_cell.world_mut().query::<(&Name, &Health)>() };
-    let query_iter = query_state.iter(unsafe { unsafe_world_cell.world_mut() });
+    let mut query_state = unsafe {
+        unsafe_world_cell
+            .world_mut()
+            .query::<(&Name, &mut Health)>()
+    };
+    let query_iter = query_state.iter_mut(unsafe { unsafe_world_cell.world_mut() });
     let items: Vec<_> = query_iter.collect();
     dbg!(&items);
     let query: Vec<KValue> = items
         .into_iter()
-        // .map(|v| KValue::Object(v.to_owned().into()))
-        .map(|(name, health)| {
+        .map(|(name, mut health)| {
+            let koto_res_mut_health = KotoErasedMut::new(&mut *health);
             KTuple::from(&[
                 KValue::Str(name.to_string().into()),
-                KValue::Object(health.to_owned().into()),
+                KValue::Object(koto_res_mut_health.into()),
             ])
             .into()
         })
@@ -198,4 +194,48 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
     }
 
     Ok(())
+}
+
+#[derive(KotoType)]
+struct KotoErasedMut<V>
+where
+    V: KotoObject + 'static,
+{
+    ptr: *mut V,
+    _marker: PhantomData<V>,
+}
+
+unsafe impl<V: KotoObject + 'static> Send for KotoErasedMut<V> {}
+unsafe impl<V: KotoObject + 'static> Sync for KotoErasedMut<V> {}
+
+impl<V> KotoErasedMut<V>
+where
+    V: KotoObject + 'static,
+{
+    fn new(value: &mut V) -> Self {
+        Self {
+            ptr: value as *mut V,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<V> KotoObject for KotoErasedMut<V>
+where
+    V: KotoObject + 'static,
+{
+    fn add_assign(&mut self, rhs: &KValue) -> runtime::Result<()> {
+        unsafe { (*self.ptr).add_assign(rhs) }
+    }
+}
+
+impl<V> KotoEntries for KotoErasedMut<V> where V: KotoObject + 'static {}
+
+impl<V> KotoCopy for KotoErasedMut<V>
+where
+    V: KotoObject + 'static,
+{
+    fn copy(&self) -> KObject {
+        todo!()
+    }
 }
