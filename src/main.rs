@@ -36,7 +36,9 @@ fn main() -> Result<(), BevyError> {
     // app.run();
 
     app.register_type::<Health>();
-    app.world_mut().run_system_once(register_koto_system)??;
+
+    app.add_systems(Startup, (setup_entities, register_koto_system).chain());
+    app.run();
 
     Ok(())
 }
@@ -101,22 +103,10 @@ fn run_one_shot_script(world: &mut World) -> Result<(), BevyError> {
     Ok(())
 }
 
-fn check_crash(mut runtime: ResMut<Runtime>) {
-    runtime.koto.compile_and_run(ONE_SHOT_SCRIPT).unwrap();
+fn setup_entities(mut commands: Commands) {
+    commands.spawn((Name::new("Player"), Health(50)));
+    commands.spawn((Name::new("Monster"), Health(2000)));
 }
-
-const SYSTEM_SCRIPT: &str = r#"
-export my_system = |query|
-    @meta args = ["Query<Entity, Moo>"]
-
-#    query = [("ent", 5)]
-#
-#    for entity, v in query
-#        print v
-
-# add_system(my_system)
-
-"#;
 
 fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
     let unsafe_world_cell = world.as_unsafe_world_cell();
@@ -135,26 +125,31 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
 
     let my_system = runtime.koto.exports().get("my_system").unwrap();
 
-    let s: KValue = KTuple::from(&["test".into(), 1.into()]).into();
+    // let s: KValue = KTuple::from(&["test".into(), 1.into()]).into();
+    // let iterator = KIterator::with_std_forward_iter(
+    //     vec![
+    //         KIteratorOutput::Value(s.clone()),
+    //         KIteratorOutput::Value(s.clone()),
+    //         KIteratorOutput::Value(s.clone()),
+    //         KIteratorOutput::Value(s.clone()),
+    //     ]
+    //     .into_iter(),
+    // );
 
-    let iterator = KIterator::with_std_forward_iter(
-        vec![
-            KIteratorOutput::Value(s.clone()),
-            KIteratorOutput::Value(s.clone()),
-            KIteratorOutput::Value(s.clone()),
-            KIteratorOutput::Value(s.clone()),
-        ]
-        .into_iter(),
-    );
-    let query = KValue::Iterator(iterator);
+    let mut query_state = unsafe { unsafe_world_cell.world_mut().query::<&Health>() };
+    let query_iter = query_state.iter(unsafe { unsafe_world_cell.world_mut() });
+    let items: Vec<_> = query_iter.collect();
+    dbg!(items);
 
-    match runtime.koto.call_function(my_system, query) {
-        Ok(_) => {}
-        Err(err) => {
-            println!("{err}");
-            return Err(BevyError::from(err));
-        }
-    }
+    // let query = KValue::Iterator(iterator);
+
+    // match runtime.koto.call_function(my_system, query) {
+    //     Ok(_) => {}
+    //     Err(err) => {
+    //         println!("{err}");
+    //         return Err(BevyError::from(err));
+    //     }
+    // }
 
     Ok(())
 }
