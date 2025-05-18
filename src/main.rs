@@ -32,7 +32,7 @@ fn main() -> Result<(), BevyError> {
     app.register_type::<Health>();
 
     app.add_systems(Startup, (setup_entities, register_koto_system).chain());
-    app.add_systems(Update, register_koto_system.chain());
+    app.add_systems(Update, (register_koto_system, print_entity_health));
     app.run();
 
     Ok(())
@@ -174,7 +174,7 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
     let query: Vec<KValue> = items
         .into_iter()
         .map(|(name, mut health)| {
-            let koto_res_mut_health = KotoErasedMut::new(&mut *health);
+            let koto_res_mut_health = KotoBevyMut::new(&mut *health);
             KTuple::from(&[
                 KValue::Str(name.to_string().into()),
                 KValue::Object(koto_res_mut_health.into()),
@@ -197,7 +197,7 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
 }
 
 #[derive(KotoType)]
-struct KotoErasedMut<V>
+struct KotoBevyMut<V>
 where
     V: KotoObject + 'static,
 {
@@ -205,10 +205,10 @@ where
     _marker: PhantomData<V>,
 }
 
-unsafe impl<V: KotoObject + 'static> Send for KotoErasedMut<V> {}
-unsafe impl<V: KotoObject + 'static> Sync for KotoErasedMut<V> {}
+unsafe impl<V: KotoObject + 'static> Send for KotoBevyMut<V> {}
+unsafe impl<V: KotoObject + 'static> Sync for KotoBevyMut<V> {}
 
-impl<V> KotoErasedMut<V>
+impl<V> KotoBevyMut<V>
 where
     V: KotoObject + 'static,
 {
@@ -220,7 +220,7 @@ where
     }
 }
 
-impl<V> KotoObject for KotoErasedMut<V>
+impl<V> KotoObject for KotoBevyMut<V>
 where
     V: KotoObject + 'static,
 {
@@ -229,13 +229,19 @@ where
     }
 }
 
-impl<V> KotoEntries for KotoErasedMut<V> where V: KotoObject + 'static {}
+impl<V> KotoEntries for KotoBevyMut<V> where V: KotoObject + 'static {}
 
-impl<V> KotoCopy for KotoErasedMut<V>
+impl<V> KotoCopy for KotoBevyMut<V>
 where
     V: KotoObject + 'static,
 {
     fn copy(&self) -> KObject {
         todo!()
+    }
+}
+
+fn print_entity_health(query: Query<(&Name, &Health)>) {
+    for (name, health) in &query {
+        println!("{name} {health:?}");
     }
 }
