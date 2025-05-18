@@ -152,17 +152,6 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
 
     let my_system = runtime.koto.exports().get("my_system").unwrap();
 
-    // let s: KValue = KTuple::from(&["test".into(), 1.into()]).into();
-    // let iterator = KIterator::with_std_forward_iter(
-    //     vec![
-    //         KIteratorOutput::Value(s.clone()),
-    //         KIteratorOutput::Value(s.clone()),
-    //         KIteratorOutput::Value(s.clone()),
-    //         KIteratorOutput::Value(s.clone()),
-    //     ]
-    //     .into_iter(),
-    // );
-
     let mut query_state = unsafe {
         unsafe_world_cell
             .world_mut()
@@ -224,8 +213,14 @@ impl<V> KotoObject for KotoBevyMut<V>
 where
     V: KotoObject + 'static,
 {
+    fn display(&self, ctx: &mut DisplayContext) -> runtime::Result<()> {
+        unsafe { (*self.ptr).display(ctx) }
+    }
     fn add_assign(&mut self, rhs: &KValue) -> runtime::Result<()> {
         unsafe { (*self.ptr).add_assign(rhs) }
+    }
+    fn add(&self, rhs: &KValue) -> runtime::Result<KValue> {
+        unsafe { (*self.ptr).add(rhs) }
     }
 }
 

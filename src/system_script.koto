@@ -1,5 +1,5 @@
 export my_system = |query|
   for name, health in query
-      if name == "Player"
-        health += 1
-        print health
+    if name == "Player"
+      health += 1
+      print health
