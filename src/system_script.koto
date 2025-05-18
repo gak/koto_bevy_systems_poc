@@ -1,8 +1,7 @@
 export my_system = |query|
   # query = [("ent", 5)]
 
-  for s, v in query
-      print s
-      print v
-
-# add_system(my_system)
+  for name, health in query
+      if name == "Player"
+        health += 1
+        print health

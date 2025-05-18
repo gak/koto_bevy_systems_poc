@@ -9,8 +9,10 @@ use bevy::{
     prelude::*,
 };
 use koto::{
-    Koto,
-    runtime::{KIterator, KIteratorOutput, KTuple, KValue, KotoIterator, MetaKey},
+    ErrorKind,
+    derive::{KotoCopy, KotoType, koto_impl},
+    prelude::*,
+    runtime,
 };
 
 const ONE_SHOT_SCRIPT: &str = r#"
@@ -38,14 +40,47 @@ fn main() -> Result<(), BevyError> {
     app.register_type::<Health>();
 
     app.add_systems(Startup, (setup_entities, register_koto_system).chain());
+    app.add_systems(Update, register_koto_system.chain());
     app.run();
 
     Ok(())
 }
 
-#[derive(Component, Reflect, Debug, Default)]
+#[derive(Component, Reflect, Debug, Default, Clone, KotoType)]
 #[reflect(Component, Default)]
 pub(crate) struct Health(pub u32);
+
+impl Health {}
+
+impl KotoEntries for Health {}
+
+impl KotoObject for Health {
+    // KotoObject::Display allows mytype to be used with Koto's print function
+    fn display(&self, ctx: &mut DisplayContext) -> runtime::Result<()> {
+        ctx.append(format!("Health!!!({})", self.0));
+        Ok(())
+    }
+
+    fn add_assign(&mut self, rhs: &KValue) -> runtime::Result<()> {
+        if let KValue::Number(rhs) = rhs {
+            let v: u32 = rhs.into();
+            self.0 += v;
+            Ok(())
+        } else {
+            Err(ErrorKind::UnexpectedType {
+                expected: "Number".to_string(),
+                unexpected: rhs.type_as_string().into(),
+            }
+            .into())
+        }
+    }
+}
+
+impl KotoCopy for Health {
+    fn copy(&self) -> KObject {
+        todo!()
+    }
+}
 
 #[derive(Resource)]
 struct Runtime {
@@ -136,20 +171,31 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
     //     .into_iter(),
     // );
 
-    let mut query_state = unsafe { unsafe_world_cell.world_mut().query::<&Health>() };
+    let mut query_state = unsafe { unsafe_world_cell.world_mut().query::<(&Name, &Health)>() };
     let query_iter = query_state.iter(unsafe { unsafe_world_cell.world_mut() });
     let items: Vec<_> = query_iter.collect();
-    dbg!(items);
+    dbg!(&items);
+    let query: Vec<KValue> = items
+        .into_iter()
+        // .map(|v| KValue::Object(v.to_owned().into()))
+        .map(|(name, health)| {
+            KTuple::from(&[
+                KValue::Str(name.to_string().into()),
+                KValue::Object(health.to_owned().into()),
+            ])
+            .into()
+        })
+        .collect();
 
-    // let query = KValue::Iterator(iterator);
+    let query = KValue::List(KList::from_slice(query.as_slice()));
 
-    // match runtime.koto.call_function(my_system, query) {
-    //     Ok(_) => {}
-    //     Err(err) => {
-    //         println!("{err}");
-    //         return Err(BevyError::from(err));
-    //     }
-    // }
+    match runtime.koto.call_function(my_system, query) {
+        Ok(_) => {}
+        Err(err) => {
+            println!("{err}");
+            return Err(BevyError::from(err));
+        }
+    }
 
     Ok(())
 }
