@@ -1,11 +1,21 @@
-use std::{marker::PhantomData, mem::transmute};
+use std::{
+    marker::PhantomData,
+    mem::transmute,
+    sync::{Arc, Mutex},
+};
 
 use bevy::{
     ecs::{system::SystemId, world::unsafe_world_cell::UnsafeWorldCell},
+    log::tracing_subscriber::registry,
     platform::collections::HashMap,
     prelude::*,
 };
-use koto::{ErrorKind, derive::KotoType, prelude::*, runtime};
+use koto::{
+    ErrorKind,
+    derive::KotoType,
+    prelude::*,
+    runtime::{self, KFunction},
+};
 
 const ONE_SHOT_SCRIPT: &str = r#"
 print "koto script loaded"
@@ -31,8 +41,8 @@ fn main() -> Result<(), BevyError> {
 
     app.register_type::<Health>();
 
-    app.add_systems(Startup, (setup_entities, register_koto_system).chain());
-    app.add_systems(Update, (register_koto_system, print_entity_health));
+    app.add_systems(Startup, setup_entities);
+    app.add_systems(Update, (register_koto_system_dynamic, print_entity_health));
     app.run();
 
     Ok(())
@@ -74,10 +84,16 @@ impl KotoCopy for Health {
     }
 }
 
+struct KotoSystem {
+    fn_name: String,
+    query_data_components: Vec<String>,
+}
+
 #[derive(Resource)]
 struct Runtime {
     koto: Koto,
     systems: HashMap<String, SystemId<(), ()>>,
+    koto_systems: HashMap<String, KotoSystem>,
 }
 
 impl Runtime {
@@ -85,6 +101,7 @@ impl Runtime {
         Self {
             koto: Koto::new(),
             systems: HashMap::new(),
+            koto_systems: HashMap::new(),
         }
     }
 
@@ -181,6 +198,64 @@ fn register_koto_system(world: &mut World) -> Result<(), BevyError> {
             return Err(BevyError::from(err));
         }
     }
+
+    Ok(())
+}
+
+fn register_koto_system_dynamic(world: &mut World) -> Result<(), BevyError> {
+    let unsafe_world_cell = world.as_unsafe_world_cell();
+
+    let mut runtime = unsafe { unsafe_world_cell.world_mut().resource_mut::<Runtime>() };
+    let app_type_registry = unsafe { unsafe_world_cell.world_mut().resource::<AppTypeRegistry>() };
+    let type_registry = app_type_registry.read();
+
+    let koto = &mut runtime.koto;
+
+    let mut new_koto_systems = Arc::new(Mutex::new(Vec::<KotoSystem>::new()));
+    let new_koto_systems_inner = new_koto_systems.clone();
+
+    koto.prelude().add_fn("add_system", |ctx| {
+        let mut koto_systems = new_koto_systems_inner.lock().unwrap();
+
+        let koto_system_fn = ctx.args().first().unwrap();
+        let fn_name = koto_system_fn.type_as_string().to_string();
+        let KValue::Function(koto_system_fn) = koto_system_fn else {
+            panic!("not a fn!");
+        };
+
+        let query_data: Vec<&KValue> = ctx.args().iter().skip(1).collect();
+
+        let mut query_data_components = Vec::new();
+        for data_item in query_data {
+            let KValue::Str(s) = data_item else {
+                panic!("not a str");
+            };
+            let component_name = s.to_string();
+            query_data_components.push(component_name);
+            //     let type_registration = type_registry
+            //         .get_with_short_type_path(&component_name)
+            //         .expect(&format!("{component_name} not in type registry"));
+        }
+
+        koto_systems.push(KotoSystem {
+            fn_name,
+            query_data_components,
+        });
+
+        Ok(KValue::Null)
+    });
+
+    let system_script = include_str!("system_script.koto");
+
+    match koto.compile_and_run(system_script) {
+        Ok(_) => {
+            println!("ok?");
+        }
+        Err(err) => {
+            println!("{err}");
+            return Err(BevyError::from(err));
+        }
+    };
 
     Ok(())
 }

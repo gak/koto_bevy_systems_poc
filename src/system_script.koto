@@ -1,5 +1,22 @@
-export my_system = |query|
+mut = || print ""
+
+export increment_player_health = |query|
   for name, health in query
     if name == "Player"
-      health += 1
+      health += 3
       print health
+
+# add_system(increment_player_health, query("Name", mut("Health")))
+
+export show_all_names = |query|
+  for name in query
+    print name
+
+query = |data...|
+  what: "query"
+  data: data
+
+add_system(show_all_names, query("Name", "Component"))
+
+debug koto
+debug koto.exports()
